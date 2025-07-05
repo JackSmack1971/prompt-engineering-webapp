@@ -1,0 +1,64 @@
+{
+  "family": "prompt-engineering-webapp",
+  "networkMode": "awsvpc",
+  "cpu": "256",
+  "memory": "512",
+  "executionRoleArn": "arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/ecsTaskExecutionRole",
+  "taskRoleArn": "arn:aws:iam::YOUR_AWS_ACCOUNT_ID:role/ecsTaskRole",
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "containerDefinitions": [
+    {
+      "name": "prompt-engineering-webapp",
+      "image": "YOUR_ECR_REPO/prompt-engineering-webapp:latest",
+      "portMappings": [
+        {
+          "containerPort": 8000,
+          "hostPort": 8000,
+          "protocol": "tcp"
+        }
+      ],
+      "environment": [
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "DATABASE_URL",
+          "value": "YOUR_RDS_DATABASE_URL"
+        },
+        {
+          "name": "REDIS_URL",
+          "value": "YOUR_ELASTICACHE_REDIS_URL"
+        },
+        {
+          "name": "OPENROUTER_API_KEY",
+          "value": "YOUR_OPENROUTER_API_KEY"
+        },
+        {
+          "name": "SECRET_KEY",
+          "value": "YOUR_SUPER_SECRET_JWT_KEY"
+        },
+        {
+          "name": "S3_BUCKET_NAME",
+          "value": "prompt-webapp-storage"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/ecs/prompt-engineering-webapp",
+          "awslogs-region": "us-east-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "secrets": [
+        {
+          "name": "REDIS_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:us-east-1:YOUR_AWS_ACCOUNT_ID:secret:redis-password"
+        }
+      ]
+    }
+  ]
+}

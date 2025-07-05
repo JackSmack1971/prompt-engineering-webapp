@@ -1,0 +1,21 @@
+-r base.txt
+
+# Testing - EXACT VERSIONS
+pytest==7.4.3
+pytest-asyncio==0.21.1
+pytest-cov==4.1.0
+pytest-mock==3.12.0
+faker==20.1.0
+factory-boy==3.3.0
+
+# Code Quality - EXACT VERSIONS
+black==23.12.0
+isort==5.13.2
+flake8==6.1.0
+mypy==1.8.0
+pre-commit==3.6.0
+
+# Development Tools - EXACT VERSIONS
+watchdog==3.0.0
+python-dotenv==1.0.0
+ipython==8.18.1

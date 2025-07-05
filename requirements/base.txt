@@ -1,0 +1,43 @@
+# Core Framework - EXACT VERSIONS
+fastapi==0.104.1
+gradio==4.16.0
+uvicorn[standard]==0.24.0
+gunicorn==21.2.0
+
+# Database - EXACT VERSIONS
+sqlalchemy[asyncio]==2.0.25
+asyncpg==0.29.0
+alembic==1.13.1
+psycopg2-binary==2.9.9
+
+# Authentication & Security - EXACT VERSIONS
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+cryptography==41.0.8
+python-multipart==0.0.6
+
+# LLM Integration - EXACT VERSIONS
+openai==1.6.1
+anthropic==0.8.1
+httpx==0.25.2
+tiktoken==0.5.2
+
+# Caching & Background Jobs - EXACT VERSIONS
+redis==5.0.1
+celery==5.3.4
+flower==2.0.1
+
+# Configuration & Validation - EXACT VERSIONS
+pydantic==2.5.2
+pydantic-settings==2.1.0
+python-dotenv==1.0.0
+
+# Data Processing - EXACT VERSIONS
+pandas==2.1.4
+numpy==1.25.2
+plotly==5.18.0
+
+# Utilities - EXACT VERSIONS
+structlog==23.2.0
+rich==13.7.0
+python-dateutil==2.8.2

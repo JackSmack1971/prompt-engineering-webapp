@@ -149,6 +149,11 @@ class PromptCollaboration(Base):
         Index('idx_prompt_tags', 'tags', postgresql_using='gin'),
     )
 
+    __table_args__ = (
+        UniqueConstraint('prompt_id', 'user_id', name='unique_collaboration'),
+        Index('idx_prompt_tags', 'tags', postgresql_using='gin'),
+    )
+
     prompt: Mapped["Prompt"] = relationship("Prompt")
     user: Mapped["User"] = relationship("User")
 

@@ -1,20 +1,22 @@
-from fastapi import FastAPI, Request, HTTPException, status # Added Request, HTTPException, status
-from fastapi.responses import JSONResponse # New import
 from contextlib import asynccontextmanager
+import logging
+from typing import Any, Dict, List, Optional, AsyncGenerator # Added for type hinting consistency
+
+from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+
+from fastapi_guard import SecurityMiddleware, SecurityConfig
+from redis import Redis
+from fastapi_guard.stores.redis import RedisStore
+
 from app.core.config import settings
 from app.core.database import engine
 from app.models.database import Base
 from app.api.routes import router
 from app.services.cache import cache_service
 from app.services.openrouter import openrouter_service
-import logging
-
-from fastapi_guard import SecurityMiddleware, SecurityConfig
-from redis import Redis
-from fastapi_guard.stores.redis import RedisStore
-
-from app.exceptions.custom_exceptions import APIException, ErrorResponse, InternalServerError # New import
+from app.exceptions.custom_exceptions import APIException, ErrorResponse, InternalServerError
 
 # Configure logging
 logging.basicConfig(
@@ -41,7 +43,13 @@ async def lifespan(app: FastAPI):
     app.state.redis_client = cache_service.redis_client
     app.state.rate_limit_store = RedisStore(app.state.redis_client)
     
-    # FastAPI Guard Middleware for Global Rate Limiting is added outside lifespan
+    # Initialize FastAPI Guard Middleware for Global Rate Limiting inside lifespan
+    security_config = SecurityConfig(
+        rate_limit_store=app.state.rate_limit_store,
+        global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
+        concurrent_requests_limit=settings.rate_limit_concurrent_users,
+    )
+    app.add_middleware(SecurityMiddleware, config=security_config)
 
     logger.info("Validating OpenRouter service configuration...")
     if not settings.openrouter_api_key:
@@ -102,13 +110,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# FastAPI Guard Middleware for Global Rate Limiting
-security_config = SecurityConfig(
-    rate_limit_store=app.state.rate_limit_store,
-    global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
-    concurrent_requests_limit=settings.rate_limit_concurrent_users,
-)
-app.add_middleware(SecurityMiddleware, config=security_config)
 
 # Security Headers (consider using a reverse proxy for production)
 # if settings.security_headers:

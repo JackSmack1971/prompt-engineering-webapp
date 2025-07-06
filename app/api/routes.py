@@ -1,28 +1,34 @@
 from typing import List, Optional, Dict, Any, AsyncGenerator
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
+from fastapi.security import OAuth2PasswordBearer
 from pydantic import BaseModel
+from sqlalchemy.ext.asyncio import AsyncSession # New import
+from fastapi_guard import SecurityDecorator # New import
+from app.exceptions.custom_exceptions import AuthError # New import
 
 from app.core.config import settings
+from app.core.database import get_db_session # New import
 from app.services.auth import authenticate_user, create_access_token, create_refresh_token, decode_token
-from app.services.openrouter import openrouter_service
 from app.models.database import User
 
 router = APIRouter()
 
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 # Dependency to get current user
-async def get_current_user(token: str) -> User:
+async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
     try:
         payload = decode_token(token)
         username: str = payload.get("sub")
         if username is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authentication credentials")
+            raise AuthError(message="Invalid authentication credentials")
         # In a real app, you'd fetch the user from the DB based on username
         # For now, we'll use a placeholder User object
         user = User(username=username, email="test@example.com", password_hash="hashed_password")
         return user
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise AuthError(message="Could not validate credentials", details=str(e))
 
 # Authentication endpoints
 class Token(BaseModel):
@@ -35,14 +41,10 @@ class LoginRequest(BaseModel):
     password: str
 
 @router.post("/token", response_model=Token)
-async def login_for_access_token(form_data: LoginRequest):
-    user = await authenticate_user(form_data.username, form_data.password)
+async def login_for_access_token(form_data: LoginRequest, db_session: AsyncSession = Depends(get_db_session)):
+    user = await authenticate_user(form_data.username, form_data.password, db_session)
     if not user:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
+        raise AuthError(message="Incorrect username or password", details={"WWW-Authenticate": "Bearer"})
     access_token = create_access_token(data={"sub": user.username})
     refresh_token = create_refresh_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}
@@ -53,14 +55,18 @@ async def refresh_access_token(refresh_token: str):
         payload = decode_token(refresh_token)
         username: str = payload.get("sub")
         if username is None:
-            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+            raise AuthError(message="Invalid refresh token")
         access_token = create_access_token(data={"sub": username})
         return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token} # Return new access token and original refresh token
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(e))
+        raise AuthError(message="Could not refresh token", details=str(e))
 
 # User endpoints
-@router.get("/users/me")
+@router.get(
+    "/users/me",
+    dependencies=[Depends(get_current_user)],
+    security_decorators=[SecurityDecorator(requests=settings.rate_limit_user_requests, window=settings.rate_limit_user_window)]
+)
 async def read_users_me(current_user: User = Depends(get_current_user)):
     return {"username": current_user.username, "email": current_user.email}
 
@@ -77,7 +83,11 @@ class ChatCompletionRequest(BaseModel):
     top_p: Optional[float] = None
     stream: bool = False
 
-@router.post("/chat/completions")
+@router.post(
+    "/chat/completions",
+    dependencies=[Depends(get_current_user)],
+    security_decorators=[SecurityDecorator(requests=settings.rate_limit_llm_requests, window=settings.rate_limit_llm_window)]
+)
 async def create_chat_completion(request: ChatCompletionRequest, current_user: User = Depends(get_current_user)):
     messages_dict = [msg.dict() for msg in request.messages]
     if request.stream:

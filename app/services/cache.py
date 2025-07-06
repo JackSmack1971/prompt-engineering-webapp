@@ -4,6 +4,7 @@ from typing import Any, Optional, Callable, TypeVar
 from functools import wraps
 
 from app.core.config import settings
+from app.exceptions.custom_exceptions import InternalServerError # Import the custom exception
 
 # Type variable for the decorated function's return type
 R = TypeVar('R')
@@ -27,47 +28,43 @@ class CacheService:
             await self.redis_client.close()
             self.redis_client = None
 
-    async def get(self, key: str) -> Optional[Any]:
+    def _check_connection(self):
         if not self.redis_client:
-            await self.connect()
+            raise InternalServerError(message="Redis client not connected. Ensure connect() is called during application startup.")
+
+    async def get(self, key: str) -> Optional[Any]:
+        self._check_connection()
         value = await self.redis_client.get(key)
         if value:
             return json.loads(value)
         return None
 
     async def set(self, key: str, value: Any, ex: Optional[int] = None):
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         await self.redis_client.set(key, json.dumps(value), ex=ex)
 
     async def delete(self, key: str):
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         await self.redis_client.delete(key)
 
     async def increment(self, key: str, amount: int = 1) -> int:
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         return await self.redis_client.incr(key, amount)
 
     async def decrement(self, key: str, amount: int = 1) -> int:
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         return await self.redis_client.decr(key, amount)
 
     async def exists(self, key: str) -> bool:
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         return await self.redis_client.exists(key)
 
     async def expire(self, key: str, ttl: int):
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         await self.redis_client.expire(key, ttl)
 
     async def get_set(self, key: str, value: Any) -> Optional[Any]:
-        if not self.redis_client:
-            await self.connect()
+        self._check_connection()
         old_value = await self.redis_client.getset(key, json.dumps(value))
         if old_value:
             return json.loads(old_value)

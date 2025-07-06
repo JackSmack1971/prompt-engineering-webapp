@@ -1,11 +1,15 @@
 from datetime import datetime, timedelta
 from typing import Optional
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 
 from app.core.config import settings
 from app.models.database import User
+from app.core.database import get_db_session
+from app.exceptions.custom_exceptions import AuthError # New import
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
@@ -40,15 +44,21 @@ def decode_token(token: str) -> dict:
         payload = jwt.decode(token, settings.secret_key, algorithms=[settings.jwt_algorithm], audience=settings.jwt_audience, issuer=settings.jwt_issuer)
         return payload
     except JWTError as e:
-        raise ValueError("Could not validate credentials") from e
+        raise AuthError(message="Could not validate credentials", details=str(e))
 
-async def authenticate_user(username: str, password: str) -> Optional[User]:
-    # This is a placeholder. In a real app, you'd fetch the user from the DB
-    # and verify their password.
-    if username == "testuser" and password == "testpassword": # Example hardcoded user
-        user = User(username="testuser", email="test@example.com", password_hash=get_password_hash("testpassword"))
-        return user
-    return None
+async def authenticate_user(username: str, password: str, db_session: AsyncSession) -> Optional[User]:
+    # Fetch the user from the database
+    result = await db_session.execute(select(User).filter(User.username == username))
+    user = result.scalars().first()
+
+    if not user:
+        raise AuthError(message="Incorrect username or password")
+    
+    # Verify the password
+    if not verify_password(password, user.password_hash):
+        raise AuthError(message="Incorrect username or password")
+        
+    return user
 
 # Placeholder for JWT public/private key management
 # In a real application, you would manage these securely, e.g., AWS Secrets Manager

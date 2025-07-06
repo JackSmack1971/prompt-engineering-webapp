@@ -4,10 +4,10 @@ import uuid
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
-from sqlalchemy.orm import relationship, Mapped, mapped_column
-from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 
-Base = declarative_base()
+class Base(DeclarativeBase):
+    pass
 
 class User(Base):
     __tablename__ = "users"
@@ -79,7 +79,7 @@ class Prompt(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     owner: Mapped["User"] = relationship("User", back_populates="prompts")
-    parent_prompt: Mapped[Optional["Prompt"]] = relationship("Prompt", remote_side=[id], back_populates="versions")
+    parent_prompt: Mapped[Optional["Prompt"]] = relationship("Prompt", remote_side="Prompt.id", back_populates="versions")
     versions: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="parent_prompt")
     test_results: Mapped[List["TestResult"]] = relationship("TestResult", back_populates="prompt")
 

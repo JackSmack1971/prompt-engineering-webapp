@@ -1,5 +1,5 @@
 from pydantic_settings import BaseSettings
-from pydantic import Field, validator
+from pydantic import Field, validator, SecretStr # Import SecretStr
 from typing import Optional, List
 from enum import Enum
 
@@ -19,6 +19,12 @@ class Settings(BaseSettings):
     api_prefix: str = Field("/api/v1", env="API_PREFIX")
     host: str = Field("0.0.0.0", env="HOST")
     port: int = Field(8000, env="PORT")
+
+    # CORS Configuration
+    allowed_hosts: List[str] = Field(["*"], env="ALLOWED_HOSTS") # Should be restricted in production
+
+    # Security Headers
+    security_headers: bool = Field(True, env="SECURITY_HEADERS")
     
     # Database - EXACT CONFIGURATION
     database_url: str = Field(..., env="DATABASE_URL")
@@ -37,8 +43,8 @@ class Settings(BaseSettings):
     openrouter_timeout: int = Field(60, env="OPENROUTER_TIMEOUT")
     
     # JWT Configuration - FINAL SPECIFICATIONS
-    secret_key: str = Field(..., env="SECRET_KEY")
-    jwt_algorithm: str = Field("RS256", env="JWT_ALGORITHM")  # RS256 for production
+    secret_key: SecretStr = Field(..., env="SECRET_KEY") # Use SecretStr for secure handling
+    jwt_algorithm: str = Field("HS256", env="JWT_ALGORITHM")  # HS256 for symmetric key
     jwt_access_expire_minutes: int = Field(15, env="JWT_ACCESS_EXPIRE_MINUTES")  # 15 minutes
     jwt_refresh_expire_days: int = Field(7, env="JWT_REFRESH_EXPIRE_DAYS")  # 7 days
     jwt_issuer: str = Field("prompt-engineering-app", env="JWT_ISSUER")
@@ -84,9 +90,9 @@ class Settings(BaseSettings):
         return v
     
     @validator('secret_key')
-    def validate_secret_key(cls, v):
-        if len(v) < 32:
-            raise ValueError('Secret key must be at least 32 characters')
+    def validate_secret_key(cls, v: SecretStr): # Type hint for SecretStr
+        if len(v.get_secret_value()) < 32: # Access the secret value
+            raise ValueError('Secret key must be at least 32 characters for adequate entropy.')
         return v
     
     @validator('openrouter_api_key')

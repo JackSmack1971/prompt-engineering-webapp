@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     port: int = Field(8000, env="PORT")
 
     # CORS Configuration
-    allowed_hosts: List[str] = Field(["https://yourdomain.com"], env="ALLOWED_HOSTS") # Should be restricted in production
+    allowed_hosts: List[str] = Field(["https://yourdomain.com"], env="ALLOWED_HOSTS") # IMPORTANT: Restrict this to your actual production domains!
 
     # Security Headers
     security_headers: bool = Field(True, env="SECURITY_HEADERS")
@@ -38,12 +38,13 @@ class Settings(BaseSettings):
     redis_max_connections: int = Field(100, env="REDIS_MAX_CONNECTIONS")
     
     # OpenRouter - EXACT CONFIGURATION
-    openrouter_api_key: str = Field(..., env="OPENROUTER_API_KEY")
+    openrouter_api_key: SecretStr = Field(..., env="OPENROUTER_API_KEY")
     openrouter_base_url: str = Field("https://openrouter.ai/api/v1", env="OPENROUTER_BASE_URL")
     openrouter_timeout: int = Field(60, env="OPENROUTER_TIMEOUT")
     
     # JWT Configuration - FINAL SPECIFICATIONS
     secret_key: SecretStr = Field(..., env="SECRET_KEY") # Use SecretStr for secure handling
+    fernet_key: SecretStr = Field(..., env="FERNET_KEY") # Key for Fernet encryption
     jwt_algorithm: str = Field("HS256", env="JWT_ALGORITHM")  # HS256 for symmetric key
     jwt_access_expire_minutes: int = Field(15, env="JWT_ACCESS_EXPIRE_MINUTES")  # 15 minutes
     jwt_refresh_expire_days: int = Field(7, env="JWT_REFRESH_EXPIRE_DAYS")  # 7 days

@@ -1,13 +1,15 @@
 import httpx
 import json
 from typing import AsyncGenerator, Dict, Any, List, Optional
+from fastapi import status # Import status for HTTP status codes
+from app.exceptions.custom_exceptions import APIException # Ensure APIException is imported
 
 from app.core.config import settings
 
 class OpenRouterService:
     def __init__(self):
         self.base_url = settings.openrouter_base_url
-        self.api_key = settings.openrouter_api_key
+        self.api_key = settings.openrouter_api_key.get_secret_value()
         self.timeout = settings.openrouter_timeout
 
     async def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
@@ -16,9 +18,53 @@ class OpenRouterService:
             "Content-Type": "application/json"
         }
         async with httpx.AsyncClient(timeout=self.timeout) as client:
-            response = await client.request(method, url, headers=headers, **kwargs)
-            response.raise_for_status()  # Raise an exception for 4xx/5xx responses
-            return response
+            try:
+                response = await client.request(method, url, headers=headers, **kwargs)
+                response.raise_for_status()  # Raise an exception for 4xx/5xx responses
+                return response
+            except httpx.TimeoutException:
+                raise APIException(
+                    status_code=status.HTTP_408_REQUEST_TIMEOUT,
+                    code="OPENROUTER_TIMEOUT",
+                    message="Request to OpenRouter API timed out.",
+                    details={"url": url}
+                )
+            except httpx.ConnectError:
+                raise APIException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    code="OPENROUTER_CONNECTION_ERROR",
+                    message="Could not connect to OpenRouter API.",
+                    details={"url": url}
+                )
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == status.HTTP_429_TOO_MANY_REQUESTS:
+                    raise APIException(
+                        status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+                        code="OPENROUTER_RATE_LIMITED",
+                        message="OpenRouter API rate limit exceeded. Please try again later.",
+                        details={"retry_after": e.response.headers.get("Retry-After")}
+                    )
+                elif e.response.status_code == status.HTTP_401_UNAUTHORIZED:
+                    raise APIException(
+                        status_code=status.HTTP_401_UNAUTHORIZED,
+                        code="OPENROUTER_UNAUTHORIZED",
+                        message="Invalid OpenRouter API key.",
+                        details={"url": url}
+                    )
+                elif e.response.status_code == status.HTTP_404_NOT_FOUND:
+                    raise APIException(
+                        status_code=status.HTTP_404_NOT_FOUND,
+                        code="OPENROUTER_NOT_FOUND",
+                        message="OpenRouter API endpoint or model not found.",
+                        details={"url": url}
+                    )
+                else:
+                    raise APIException(
+                        status_code=e.response.status_code,
+                        code=f"OPENROUTER_HTTP_ERROR_{e.response.status_code}",
+                        message=f"OpenRouter API returned an HTTP error: {e.response.status_code}",
+                        details={"url": url, "response": e.response.text}
+                    ) from e
 
     async def list_models(self) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/models"

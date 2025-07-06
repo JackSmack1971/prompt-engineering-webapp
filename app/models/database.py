@@ -1,6 +1,8 @@
 from typing import List, Optional
 from datetime import datetime
 import uuid
+from cryptography.fernet import Fernet
+from app.core.config import settings
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON, Float, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
@@ -23,7 +25,28 @@ class User(Base):
     avatar_url: Mapped[Optional[str]] = mapped_column(String(500))
     bio: Mapped[Optional[str]] = mapped_column(Text)
     
-    openrouter_api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text)
+    openrouter_api_key_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    @property
+    def openrouter_api_key(self) -> Optional[str]:
+        if self.openrouter_api_key_encrypted:
+            try:
+                f = Fernet(settings.fernet_key.get_secret_value().encode())
+                decrypted_key = f.decrypt(self.openrouter_api_key_encrypted.encode()).decode()
+                return decrypted_key
+            except Exception as e:
+                # Log the error, but don't re-raise to prevent app crash on decryption failure
+                print(f"Error decrypting OpenRouter API key: {e}")
+                return None
+        return None
+
+    @openrouter_api_key.setter
+    def openrouter_api_key(self, key: Optional[str]):
+        if key:
+            f = Fernet(settings.fernet_key.get_secret_value().encode())
+            self.openrouter_api_key_encrypted = f.encrypt(key.encode()).decode()
+        else:
+            self.openrouter_api_key_encrypted = None
     
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)

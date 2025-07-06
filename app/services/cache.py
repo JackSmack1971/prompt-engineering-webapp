@@ -2,6 +2,7 @@ import orjson
 import redis.asyncio as redis
 from typing import Any, Optional, Callable, TypeVar
 from functools import wraps
+import hashlib
 
 from app.core.config import settings
 from app.exceptions.custom_exceptions import InternalServerError # Import the custom exception
@@ -75,7 +76,10 @@ def cached(key_prefix: str, ex: int = 300):
     def decorator(func: Callable[..., R]) -> Callable[..., R]:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> R:
-            cache_key = f"{key_prefix}:{func.__name__}:{orjson.dumps(args)}:{orjson.dumps(kwargs)}"
+            # Generate a more efficient cache key using SHA256 hash
+            hashed_args = hashlib.sha256(orjson.dumps(args)).hexdigest()[:16]
+            hashed_kwargs = hashlib.sha256(orjson.dumps(kwargs)).hexdigest()[:16]
+            cache_key = f"{key_prefix}:{func.__name__}:{hashed_args}:{hashed_kwargs}"
             cached_result = await cache_service.get(cache_key)
             if cached_result:
                 return cached_result

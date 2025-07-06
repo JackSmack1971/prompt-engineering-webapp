@@ -1,6 +1,8 @@
 from contextlib import asynccontextmanager
 import logging
 from typing import Any, Dict, List, Optional, AsyncGenerator # Added for type hinting consistency
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import Response
 
 from fastapi import FastAPI, Request, HTTPException, status
 from fastapi.responses import JSONResponse
@@ -106,17 +108,23 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_hosts,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
-# Security Headers (consider using a reverse proxy for production)
-# if settings.security_headers:
-#     app.add_middleware(
-#         # Example: HSTS, X-Frame-Options, X-Content-Type-Options, etc.
-#         # These are often better handled by a reverse proxy like Nginx or a dedicated security library.
-#     )
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response = await call_next(request)
+        if settings.security_headers:
+            response.headers["X-Frame-Options"] = "DENY"
+            response.headers["X-Content-Type-Options"] = "nosniff"
+            # A more robust CSP would be generated dynamically based on allowed sources.
+            # This is a basic example.
+            response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; font-src 'self';"
+        return response
+
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(router, prefix=settings.api_prefix)
 

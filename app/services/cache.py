@@ -72,23 +72,58 @@ class CacheService:
         return None
 
 # Cache decorators
-def cached(key_prefix: str, ex: int = 300):
+def cached(key_prefix: str, ex: int = 300, cache_service_instance: 'CacheService' = None):
+    """
+    A decorator to cache the results of async functions.
+    Args:
+        key_prefix (str): A prefix for the cache key.
+        ex (int): Expiration time in seconds. Defaults to 300 (5 minutes).
+        cache_service_instance (CacheService): The CacheService instance to use.
+                                                If None, it expects a global instance to be available (for testing).
+    """
     def decorator(func: Callable[..., R]) -> Callable[..., R]:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> R:
+            # This is a fallback for situations where the cache_service_instance might not be directly injected
+            # e.g., during testing or if the decorator is used outside of FastAPI's DI context.
+            # In a production FastAPI app, cache_service_instance should always be provided via DI.
+            current_cache_service = cache_service_instance
+            if current_cache_service is None:
+                from app.main import get_cache_service
+                # Attempt to get the instance from FastAPI's state if running in an app context
+                try:
+                    # This is a bit hacky but allows the decorator to work without direct injection
+                    # in cases where it's hard to pass the instance, e.g., in module-level functions.
+                    # In FastAPI routes, prefer using Depends(get_cache_service)
+                    import inspect
+                    frame = inspect.currentframe()
+                    # Traverse up the stack to find the FastAPI app instance if possible
+                    while frame:
+                        if 'app' in frame.f_locals and isinstance(frame.f_locals['app'], FastAPI):
+                            current_cache_service = frame.f_locals['app'].state.cache_service
+                            break
+                        frame = frame.f_back
+                    if current_cache_service is None:
+                        raise InternalServerError(message="CacheService instance not found. Ensure it's provided or accessible via app.state.")
+                except Exception as e:
+                    raise InternalServerError(message=f"Failed to retrieve CacheService instance: {e}")
+
             # Generate a more efficient cache key using SHA256 hash
-            hashed_args = hashlib.sha256(orjson.dumps(args)).hexdigest()[:16]
-            hashed_kwargs = hashlib.sha256(orjson.dumps(kwargs)).hexdigest()[:16]
+            # Ensure args and kwargs are serializable. orjson.dumps handles many types.
+            try:
+                hashed_args = hashlib.sha256(orjson.dumps(args)).hexdigest()[:16]
+                hashed_kwargs = hashlib.sha256(orjson.dumps(kwargs)).hexdigest()[:16]
+            except TypeError as e:
+                raise InternalServerError(message=f"Arguments to cached function are not serializable: {e}")
+
             cache_key = f"{key_prefix}:{func.__name__}:{hashed_args}:{hashed_kwargs}"
-            cached_result = await cache_service.get(cache_key)
+            
+            cached_result = await current_cache_service.get(cache_key)
             if cached_result:
                 return cached_result
             
             result = await func(*args, **kwargs)
-            await cache_service.set(cache_key, result, ex=ex)
+            await current_cache_service.set(cache_key, result, ex=ex)
             return result
         return wrapper
     return decorator
-
-# Global cache instance
-cache_service = CacheService()

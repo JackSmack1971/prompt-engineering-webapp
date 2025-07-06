@@ -3,14 +3,16 @@ import json
 from typing import AsyncGenerator, Dict, Any, List, Optional
 from fastapi import status # Import status for HTTP status codes
 from app.exceptions.custom_exceptions import APIException # Ensure APIException is imported
+from app.services.cache import cached, CacheService # Import cached decorator and CacheService
 
 from app.core.config import settings
 
 class OpenRouterService:
     def __init__(self):
-        self.base_url = settings.openrouter_base_url
-        self.api_key = settings.openrouter_api_key.get_secret_value()
-        self.timeout = settings.openrouter_timeout
+        self.base_url: str = settings.openrouter_base_url
+        self.api_key: str = settings.openrouter_api_key.get_secret_value()
+        self.timeout: int = settings.openrouter_timeout
+        self.cache_service: Optional[CacheService] = None # Will be set during app startup
 
     async def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
         headers = {
@@ -66,12 +68,19 @@ class OpenRouterService:
                         details={"url": url, "response": e.response.text}
                     ) from e
 
+    @cached(key_prefix="openrouter_models", ex=3600) # Cache for 1 hour
     async def list_models(self) -> List[Dict[str, Any]]:
         url = f"{self.base_url}/models"
         response = await self._make_request("GET", url)
         return response.json().get('data', [])
 
-    async def _generate_chat_completion_internal(self, messages: List[Dict[str, str]], model: str, stream: bool, **kwargs):
+    async def generate_chat_completion(
+        self,
+        messages: List[Dict[str, str]],
+        model: str = "openai/gpt-3.5-turbo",
+        stream: bool = False,
+        **kwargs
+    ) -> AsyncGenerator[str, None] | Dict[str, Any]:
         url = f"{self.base_url}/chat/completions"
         payload = {
             "model": model,
@@ -79,45 +88,32 @@ class OpenRouterService:
             "stream": stream,
             **kwargs
         }
-        response = await self._make_request("POST", url, json=payload)
-        return response
 
-    async def generate_chat_completion(self, messages: List[Dict[str, str]], model: str = "openai/gpt-3.5-turbo", **kwargs) -> Dict[str, Any]:
-        response = await self._generate_chat_completion_internal(messages, model, False, **kwargs)
-        return response.json()
-
-    async def generate_chat_completion_stream(self, messages: List[Dict[str, str]], model: str = "openai/gpt-3.5-turbo", **kwargs) -> AsyncGenerator[str, None]:
-        url = f"{self.base_url}/chat/completions"
-        payload = {
-            "model": model,
-            "messages": messages,
-            "stream": True,
-            **kwargs
-        }
-
-        async with httpx.AsyncClient(timeout=self.timeout) as client:
-            async with client.stream("POST", url, headers={
-                "Authorization": f"Bearer {self.api_key}",
-                "Content-Type": "application/json"
-            }, json=payload) as response:
-                response.raise_for_status()
-                async for chunk in response.aiter_bytes():
-                    # OpenRouter sends data in SSE format
-                    decoded_chunk = chunk.decode('utf-8')
-                    for line in decoded_chunk.splitlines():
-                        if line.startswith("data:"):
-                            json_data = line[len("data:"):].strip()
-                            if json_data == "[DONE]":
-                                continue
-                            try:
-                                data = json.loads(json_data)
-                                if 'choices' in data and len(data['choices']) > 0:
-                                    delta = data['choices'][0].get('delta', {})
-                                    if 'content' in delta:
-                                        yield delta['content']
-                            except json.JSONDecodeError:
-                                # Handle cases where a line might not be complete JSON
-                                continue
+        if stream:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                async with client.stream("POST", url, headers={
+                    "Authorization": f"Bearer {self.api_key}",
+                    "Content-Type": "application/json"
+                }, json=payload) as response:
+                    response.raise_for_status()
+                    async for chunk in response.aiter_bytes():
+                        decoded_chunk = chunk.decode('utf-8')
+                        for line in decoded_chunk.splitlines():
+                            if line.startswith("data:"):
+                                json_data = line[len("data:"):].strip()
+                                if json_data == "[DONE]":
+                                    continue
+                                try:
+                                    data = json.loads(json_data)
+                                    if 'choices' in data and len(data['choices']) > 0:
+                                        delta = data['choices'][0].get('delta', {})
+                                        if 'content' in delta:
+                                            yield delta['content']
+                                except json.JSONDecodeError:
+                                    continue
+        else:
+            response = await self._make_request("POST", url, json=payload)
+            return response.json()
 
     async def get_model_info(self, model_id: str) -> Optional[Dict[str, Any]]:
         url = f"{self.base_url}/models/{model_id}"
@@ -128,5 +124,3 @@ class OpenRouterService:
             if e.response.status_code == 404:
                 return None
             raise
-
-openrouter_service = OpenRouterService()

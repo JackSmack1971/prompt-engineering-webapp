@@ -3,6 +3,9 @@ from datetime import datetime
 import uuid
 from cryptography.fernet import Fernet
 from app.core.config import settings
+import logging
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON, Float, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
@@ -34,9 +37,8 @@ class User(Base):
                 f = Fernet(settings.fernet_key.get_secret_value().encode())
                 decrypted_key = f.decrypt(self.openrouter_api_key_encrypted.encode()).decode()
                 return decrypted_key
-            except Exception as e:
-                # Log the error, but don't re-raise to prevent app crash on decryption failure
-                print(f"Error decrypting OpenRouter API key: {e}")
+            except Exception:
+                logger.warning(f"Failed to decrypt API key for user {self.id}")
                 return None
         return None
 
@@ -66,6 +68,11 @@ class User(Base):
 
     prompts: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="owner")
     test_results: Mapped[List["TestResult"]] = relationship("TestResult", back_populates="user")
+
+    __table_args__ = (
+        Index('ix_users_created_at', 'created_at'),
+        Index('ix_users_last_login_at', 'last_login_at'),
+    )
 
 class Prompt(Base):
     __tablename__ = "prompts"
@@ -106,6 +113,15 @@ class Prompt(Base):
     versions: Mapped[List["Prompt"]] = relationship("Prompt", back_populates="parent_prompt")
     test_results: Mapped[List["TestResult"]] = relationship("TestResult", back_populates="prompt")
 
+    __table_args__ = (
+        Index('ix_prompts_title', 'title'),
+        Index('ix_prompts_category', 'category'),
+        Index('ix_prompts_is_public', 'is_public'),
+        Index('ix_prompts_created_at', 'created_at'),
+        # For PostgreSQL, a GIN index would be appropriate for the 'tags' ARRAY column:
+        # Index('ix_prompts_tags', 'tags', postgresql_using='gin'),
+    )
+
 class TestResult(Base):
     __tablename__ = "test_results"
 
@@ -139,6 +155,11 @@ class TestResult(Base):
     user: Mapped["User"] = relationship("User", back_populates="test_results")
     prompt: Mapped["Prompt"] = relationship("Prompt", back_populates="test_results")
 
+    __table_args__ = (
+        Index('ix_test_results_created_at', 'created_at'),
+        Index('ix_test_results_model_name', 'model_name'),
+    )
+
 class PromptVersion(Base):
     __tablename__ = "prompt_versions"
 
@@ -153,6 +174,11 @@ class PromptVersion(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     prompt: Mapped["Prompt"] = relationship("Prompt")
+
+    __table_args__ = (
+        Index('ix_prompt_versions_prompt_id_version_number', 'prompt_id', 'version_number', unique=True),
+        Index('ix_prompt_versions_created_at', 'created_at'),
+    )
 
 class PromptCollaboration(Base):
     __tablename__ = "prompt_collaborations"
@@ -169,13 +195,8 @@ class PromptCollaboration(Base):
 
     __table_args__ = (
         UniqueConstraint('prompt_id', 'user_id', name='unique_collaboration'),
-        Index('idx_prompt_tags', 'tags', postgresql_using='gin'),
     )
-
-    __table_args__ = (
-        UniqueConstraint('prompt_id', 'user_id', name='unique_collaboration'),
-        Index('idx_prompt_tags', 'tags', postgresql_using='gin'),
-    )
+    # The UniqueConstraint already creates an index, so no additional index needed for (prompt_id, user_id)
 
     prompt: Mapped["Prompt"] = relationship("Prompt")
     user: Mapped["User"] = relationship("User")
@@ -202,6 +223,13 @@ class APICallLog(Base):
 
     user: Mapped[Optional["User"]] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_api_call_logs_created_at', 'created_at'),
+        Index('ix_api_call_logs_user_id', 'user_id'),
+        Index('ix_api_call_logs_endpoint_method', 'endpoint', 'method'),
+        Index('ix_api_call_logs_status_code', 'status_code'),
+    )
+
 class AuditLog(Base):
     __tablename__ = "audit_logs"
 
@@ -223,6 +251,12 @@ class AuditLog(Base):
 
     user: Mapped[Optional["User"]] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_audit_logs_created_at', 'created_at'),
+        Index('ix_audit_logs_user_id', 'user_id'),
+        Index('ix_audit_logs_action_entity_type', 'action', 'entity_type'),
+    )
+
 class Feedback(Base):
     __tablename__ = "feedback"
 
@@ -242,6 +276,13 @@ class Feedback(Base):
 
     user: Mapped[Optional["User"]] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_feedback_created_at', 'created_at'),
+        Index('ix_feedback_status', 'status'),
+        Index('ix_feedback_priority', 'priority'),
+        Index('ix_feedback_type', 'feedback_type'),
+    )
+
 class Notification(Base):
     __tablename__ = "notifications"
 
@@ -258,6 +299,12 @@ class Notification(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index('ix_notifications_created_at', 'created_at'),
+        Index('ix_notifications_is_read', 'is_read'),
+        Index('ix_notifications_type', 'notification_type'),
+    )
 
 class Payment(Base):
     __tablename__ = "payments"
@@ -278,6 +325,11 @@ class Payment(Base):
 
     user: Mapped["User"] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_payments_created_at', 'created_at'),
+        Index('ix_payments_status', 'status'),
+    )
+
 class Subscription(Base):
     __tablename__ = "subscriptions"
 
@@ -296,6 +348,11 @@ class Subscription(Base):
 
     user: Mapped["User"] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_subscriptions_is_active', 'is_active'),
+        Index('ix_subscriptions_end_date', 'end_date'),
+    )
+
 class UsageLog(Base):
     __tablename__ = "usage_logs"
 
@@ -309,6 +366,11 @@ class UsageLog(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index('ix_usage_logs_created_at', 'created_at'),
+        Index('ix_usage_logs_feature_used', 'feature_used'),
+    )
 
 class UserActivity(Base):
     __tablename__ = "user_activities"
@@ -324,6 +386,11 @@ class UserActivity(Base):
 
     user: Mapped["User"] = relationship("User")
 
+    __table_args__ = (
+        Index('ix_user_activities_created_at', 'created_at'),
+        Index('ix_user_activities_type', 'activity_type'),
+    )
+
 class UserSettings(Base):
     __tablename__ = "user_settings"
 
@@ -338,6 +405,11 @@ class UserSettings(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        # UniqueConstraint('user_id', 'setting_key') implicitly creates an index
+        Index('ix_user_settings_updated_at', 'updated_at'),
+    )
 
 class Webhook(Base):
     __tablename__ = "webhooks"
@@ -356,3 +428,9 @@ class Webhook(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
 
     user: Mapped["User"] = relationship("User")
+
+    __table_args__ = (
+        Index('ix_webhooks_event_type', 'event_type'),
+        Index('ix_webhooks_is_active', 'is_active'),
+        Index('ix_webhooks_created_at', 'created_at'),
+    )

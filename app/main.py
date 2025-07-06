@@ -12,13 +12,27 @@ from fastapi_guard import SecurityMiddleware, SecurityConfig
 from redis import Redis
 from fastapi_guard.stores.redis import RedisStore
 
+# Initialize SecurityConfig globally, rate_limit_store will be set in lifespan
+security_config = SecurityConfig(
+    global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
+    concurrent_requests_limit=settings.rate_limit_concurrent_users,
+)
+
 from app.core.config import settings
 from app.core.database import engine
 from app.models.database import Base
 from app.api.routes import router
-from app.services.cache import cache_service
-from app.services.openrouter import openrouter_service
+from app.services.cache import CacheService
+from app.services.openrouter import OpenRouterService # Import the class, not the instance
 from app.exceptions.custom_exceptions import APIException, ErrorResponse, InternalServerError
+
+# Dependency for CacheService
+def get_cache_service() -> CacheService:
+    return app.state.cache_service
+
+# Dependency for OpenRouterService
+def get_openrouter_service() -> OpenRouterService:
+    return app.state.openrouter_service
 
 # Configure logging
 logging.basicConfig(
@@ -39,21 +53,21 @@ async def lifespan(app: FastAPI):
     logger.info("Database connected and tables checked.")
 
     logger.info("Connecting to Redis cache...")
-    await cache_service.connect()
+    # Create CacheService instance and manage its lifecycle
+    app.state.cache_service = CacheService()
+    await app.state.cache_service.connect()
     logger.info("Redis cache connected.")
-    # Initialize Redis for fastapi-guard
-    app.state.redis_client = cache_service.redis_client
+    
+    # Initialize Redis for fastapi-guard using the same client from CacheService
+    app.state.redis_client = app.state.cache_service.redis_client
     app.state.rate_limit_store = RedisStore(app.state.redis_client)
     
-    # Initialize FastAPI Guard Middleware for Global Rate Limiting inside lifespan
-    security_config = SecurityConfig(
-        rate_limit_store=app.state.rate_limit_store,
-        global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
-        concurrent_requests_limit=settings.rate_limit_concurrent_users,
-    )
-    app.add_middleware(SecurityMiddleware, config=security_config)
+    # Set the rate limit store for SecurityConfig
+    security_config.rate_limit_store = app.state.rate_limit_store
 
-    logger.info("Validating OpenRouter service configuration...")
+    logger.info("Initializing OpenRouter service...")
+    app.state.openrouter_service = OpenRouterService()
+    app.state.openrouter_service.cache_service = app.state.cache_service # Inject CacheService into OpenRouterService
     if not settings.openrouter_api_key:
         logger.error("OPENROUTER_API_KEY is not set. OpenRouter service will not function.")
     else:
@@ -63,7 +77,8 @@ async def lifespan(app: FastAPI):
 
     # Shutdown: Disconnect from Redis
     logger.info("Application shutdown: Disconnecting from Redis cache...")
-    await cache_service.disconnect()
+    if app.state.cache_service:
+        await app.state.cache_service.disconnect()
     logger.info("Redis cache disconnected.")
 
 app = FastAPI(
@@ -72,6 +87,9 @@ app = FastAPI(
     debug=settings.debug,
     lifespan=lifespan
 )
+
+# Add SecurityMiddleware here, after app creation but before lifespan execution
+app.add_middleware(SecurityMiddleware, config=security_config)
 
 # Custom Exception Handlers
 @app.exception_handler(APIException)

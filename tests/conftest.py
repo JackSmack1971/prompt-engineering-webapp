@@ -9,30 +9,49 @@ from app.core.config import settings
 from app.core.database import get_db_session # New import
 from app.models.database import Base, User, Prompt, TestResult
 
-# Create test engine with SQLite
-TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5433/test_db"
+# Use SQLite for testing for simplicity and speed
+TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
 
 @pytest.fixture(name="async_engine", scope="session")
 async def async_engine_fixture():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=True)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    # We will use the settings.database_url override for tests,
+    # so direct engine creation here is for reference or specific needs.
+    # For actual application testing, the app's engine will be used.
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False) # echo=False to reduce test output
     yield engine
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+    # No need to drop_all here if we're overriding get_db_session and handling cleanup there.
 
 @pytest.fixture(name="async_session", scope="function")
 async def async_session_fixture(async_engine) -> AsyncGenerator[AsyncSession, None]:
     async_session_maker = sessionmaker(async_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session_maker() as session:
+        # Create tables for each test function
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
         yield session
+        # Drop tables after each test function
+        async with async_engine.begin() as conn:
+            await conn.run_sync(Base.metadata.drop_all)
 
 @pytest.fixture(name="client", scope="function")
-async def client_fixture(async_session) -> AsyncGenerator[AsyncClient, None]:
+async def client_fixture(async_session: AsyncSession) -> AsyncGenerator[AsyncClient, None]:
+    # Override the database URL for tests
+    original_database_url = settings.database_url
+    settings.database_url = TEST_DATABASE_URL
+
+    # Override dependencies
     app.dependency_overrides[get_db_session] = lambda: async_session
+    
+    # Override cache service for tests to prevent actual Redis connections if not needed
+    # from app.main import get_cache_service
+    # app.dependency_overrides[get_cache_service] = lambda: MockCacheService() # You would define a MockCacheService
+
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
-    app.dependency_overrides = {}
+    
+    # Clean up overrides
+    app.dependency_overrides.clear() # Clear all overrides
+    settings.database_url = original_database_url # Restore original database URL
 
 @pytest.fixture(name="test_user")
 async def test_user_fixture(async_session: AsyncSession) -> User:

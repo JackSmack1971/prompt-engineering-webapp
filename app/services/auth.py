@@ -25,7 +25,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(minutes=settings.jwt_access_expire_minutes)
-    to_encode.update({"exp": expire, "sub": settings.jwt_issuer, "aud": settings.jwt_audience})
+    to_encode.update({"exp": expire, "iss": settings.jwt_issuer, "aud": settings.jwt_audience})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
@@ -35,7 +35,7 @@ def create_refresh_token(data: dict, expires_delta: Optional[timedelta] = None) 
         expire = datetime.utcnow() + expires_delta
     else:
         expire = datetime.utcnow() + timedelta(days=settings.jwt_refresh_expire_days)
-    to_encode.update({"exp": expire, "sub": settings.jwt_issuer, "aud": settings.jwt_audience})
+    to_encode.update({"exp": expire, "iss": settings.jwt_issuer, "aud": settings.jwt_audience})
     encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.jwt_algorithm)
     return encoded_jwt
 
@@ -60,12 +60,26 @@ async def authenticate_user(username: str, password: str, db_session: AsyncSessi
         
     return user
 
-# Placeholder for JWT public/private key management
-# In a real application, you would manage these securely, e.g., AWS Secrets Manager
+# JWT Public/Private Key Management (for asymmetric algorithms like RS256)
+# In a real application, these keys should be managed securely,
+# e.g., fetched from AWS Secrets Manager, Google Secret Manager, HashiCorp Vault,
+# or Kubernetes Secrets, and rotated regularly.
+# For HS256 (symmetric), the SECRET_KEY from settings is used directly.
+
 def get_jwt_public_key() -> str:
-    # This is a placeholder. Replace with actual public key retrieval.
-    return "" # Your public key here
+    """
+    Retrieves the public key for JWT verification.
+    For production, this should fetch a key from a secure key management system.
+    """
+    # TODO: Implement secure retrieval of the JWT public key.
+    # Example: return some_key_management_service.get_public_key("jwt_public_key")
+    raise NotImplementedError("JWT public key retrieval is not implemented. Use a secure key management system.")
 
 def get_jwt_private_key() -> str:
-    # This is a placeholder. Replace with actual private key retrieval.
-    return "" # Your private key here
+    """
+    Retrieves the private key for JWT signing.
+    For production, this should fetch a key from a secure key management system.
+    """
+    # TODO: Implement secure retrieval of the JWT private key.
+    # Example: return some_key_management_service.get_private_key("jwt_private_key")
+    raise NotImplementedError("JWT private key retrieval is not implemented. Use a secure key management system.")

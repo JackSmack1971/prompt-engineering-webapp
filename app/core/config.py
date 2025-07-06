@@ -86,21 +86,45 @@ class Settings(BaseSettings):
     
     @validator('database_url')
     def validate_database_url(cls, v):
-        if not v.startswith(('postgresql://', 'postgresql+asyncpg://')):
-            raise ValueError('Database URL must be PostgreSQL with asyncpg driver')
+        allowed_schemes = ('postgresql://', 'postgresql+asyncpg://', 'sqlite+aiosqlite://')
+        if not v.startswith(allowed_schemes):
+            raise ValueError(f'Database URL must use one of: {allowed_schemes}')
         return v
     
     @validator('secret_key')
-    def validate_secret_key(cls, v: SecretStr):
-        secret_value = v.get_secret_value()
+    @validator('secret_key')
+    def validate_secret_key(cls, v):
+        if isinstance(v, str):
+            secret_value = v
+        else:
+            secret_value = v.get_secret_value()
         if len(secret_value) < 32:
-            raise ValueError('Secret key must be at least 32 characters for adequate entropy.')
+            raise ValueError('Secret key must be at least 32 characters')
         return v
     
     @validator('openrouter_api_key')
     def validate_openrouter_key(cls, v):
-        if not v.startswith('sk-or-'):
+        if isinstance(v, str):
+            key_value = v
+        else:
+            key_value = v.get_secret_value()
+        if not key_value.startswith('sk-or-'):
             raise ValueError('OpenRouter API key must start with sk-or-')
+        return v
+    
+    @validator('fernet_key')
+    def validate_fernet_key(cls, v):
+        from cryptography.fernet import Fernet # Import here to avoid circular dependency
+
+        if isinstance(v, str):
+            key_value = v
+        else:
+            key_value = v.get_secret_value()
+        
+        try:
+            Fernet(key_value.encode())
+        except Exception:
+            raise ValueError('Invalid Fernet key format')
         return v
     
     class Config:

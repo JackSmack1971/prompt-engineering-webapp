@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     port: int = Field(8000, env="PORT")
 
     # CORS Configuration
-    allowed_hosts: List[str] = Field(["*"], env="ALLOWED_HOSTS") # Should be restricted in production
+    allowed_hosts: List[str] = Field(["https://yourdomain.com"], env="ALLOWED_HOSTS") # Should be restricted in production
 
     # Security Headers
     security_headers: bool = Field(True, env="SECURITY_HEADERS")

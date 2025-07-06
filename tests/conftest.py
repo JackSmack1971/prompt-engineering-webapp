@@ -10,7 +10,7 @@ from app.core.database import get_db_session # New import
 from app.models.database import Base, User, Prompt, TestResult
 
 # Create test engine with SQLite
-TEST_DATABASE_URL = "sqlite+aiosqlite:///./test.db"
+TEST_DATABASE_URL = "postgresql+asyncpg://test:test@localhost:5433/test_db"
 
 @pytest.fixture(name="async_engine", scope="session")
 async def async_engine_fixture():

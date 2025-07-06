@@ -2,7 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON, Float
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON, Float, UniqueConstraint, Index
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 
@@ -13,7 +13,7 @@ class User(Base):
     __tablename__ = "users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
     
     username: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)
@@ -48,8 +48,8 @@ class Prompt(Base):
     __tablename__ = "prompts"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     title: Mapped[str] = mapped_column(String(200), nullable=False)
     description: Mapped[Optional[str]] = mapped_column(Text)
@@ -64,7 +64,7 @@ class Prompt(Base):
     template_variables: Mapped[List[str]] = mapped_column(ARRAY(String), default=[])
     
     version: Mapped[int] = mapped_column(Integer, default=1)
-    parent_prompt_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("prompts.id"))
+    parent_prompt_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("prompts.id", ondelete="CASCADE"))
     is_latest_version: Mapped[bool] = mapped_column(Boolean, default=True)
     
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
@@ -87,9 +87,9 @@ class TestResult(Base):
     __tablename__ = "test_results"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
-    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
     
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
     temperature: Mapped[Optional[float]] = mapped_column(Float)
@@ -120,8 +120,8 @@ class PromptVersion(Base):
     __tablename__ = "prompt_versions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
     
     version_number: Mapped[int] = mapped_column(Integer, nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
@@ -135,14 +135,19 @@ class PromptCollaboration(Base):
     __tablename__ = "prompt_collaborations"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id"), nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id", ondelete="CASCADE"), nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     role: Mapped[str] = mapped_column(String(20), nullable=False) # e.g., 'editor', 'viewer'
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint('prompt_id', 'user_id', name='unique_collaboration'),
+        Index('idx_prompt_tags', 'tags', postgresql_using='gin'),
+    )
 
     prompt: Mapped["Prompt"] = relationship("Prompt")
     user: Mapped["User"] = relationship("User")
@@ -151,7 +156,7 @@ class APICallLog(Base):
     __tablename__ = "api_call_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
     
     endpoint: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -173,7 +178,7 @@ class AuditLog(Base):
     __tablename__ = "audit_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
     
     action: Mapped[str] = mapped_column(String(100), nullable=False)
@@ -194,7 +199,7 @@ class Feedback(Base):
     __tablename__ = "feedback"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
     user_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("users.id"))
     
     feedback_type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'bug', 'feature_request', 'general'
@@ -213,8 +218,8 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     message: Mapped[str] = mapped_column(Text, nullable=False)
     notification_type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'system', 'alert', 'prompt_update'
@@ -230,8 +235,8 @@ class Payment(Base):
     __tablename__ = "payments"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     amount: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
@@ -249,8 +254,8 @@ class Subscription(Base):
     __tablename__ = "subscriptions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     tier: Mapped[str] = mapped_column(String(20), nullable=False) # e.g., 'free', 'pro', 'enterprise'
     start_date: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow, nullable=False)
@@ -267,8 +272,8 @@ class UsageLog(Base):
     __tablename__ = "usage_logs"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     feature_used: Mapped[str] = mapped_column(String(100), nullable=False)
     usage_count: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
@@ -281,8 +286,8 @@ class UserActivity(Base):
     __tablename__ = "user_activities"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     activity_type: Mapped[str] = mapped_column(String(100), nullable=False) # e.g., 'login', 'prompt_create', 'test_run'
     description: Mapped[Optional[str]] = mapped_column(Text)
@@ -295,8 +300,8 @@ class UserSettings(Base):
     __tablename__ = "user_settings"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     setting_key: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     setting_value: Mapped[str] = mapped_column(Text, nullable=False)
@@ -310,8 +315,8 @@ class Webhook(Base):
     __tablename__ = "webhooks"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
-    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
-    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
+    uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default_factory=uuid.uuid4, unique=True, nullable=False)
+    user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     event_type: Mapped[str] = mapped_column(String(100), nullable=False) # e.g., 'prompt_created', 'test_completed'
     callback_url: Mapped[str] = mapped_column(String(500), nullable=False)

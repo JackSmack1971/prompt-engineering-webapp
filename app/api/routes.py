@@ -1,8 +1,10 @@
 from typing import List, Optional, Dict, Any, AsyncGenerator
+import asyncio
 from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from fastapi.responses import StreamingResponse
 from fastapi.security import OAuth2PasswordBearer
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
+from jose import JWTError # New import
 from sqlalchemy.ext.asyncio import AsyncSession # New import
 from fastapi_guard import SecurityDecorator # New import
 from app.exceptions.custom_exceptions import AuthError # New import
@@ -39,7 +41,7 @@ async def get_current_user(
             raise AuthError(message="User not found")
             
         return user
-    except Exception as e:
+    except (JWTError, ValidationError) as e:
         raise AuthError(message="Could not validate credentials", details=str(e))
 
 # Authentication endpoints
@@ -130,10 +132,9 @@ async def list_models():
     return models
 
 # Background task functions
-def process_long_task(data: str):
+async def process_long_task(data: str):
     # Simulate a long-running task
-    import time
-    time.sleep(10)
+    await asyncio.sleep(10)
     print(f"Long task completed for data: {data}")
 
 @router.post("/start-long-task")

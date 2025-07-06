@@ -37,6 +37,18 @@ async def lifespan(app: FastAPI):
     logger.info("Connecting to Redis cache...")
     await cache_service.connect()
     logger.info("Redis cache connected.")
+    # Initialize Redis for fastapi-guard
+    redis_client: Redis = cache_service.redis_client
+    rate_limit_store = RedisStore(redis_client)
+
+    # FastAPI Guard Middleware for Global Rate Limiting
+    security_config = SecurityConfig(
+        rate_limit_store=rate_limit_store,
+        global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
+        concurrent_requests_limit=settings.rate_limit_concurrent_users,
+    )
+
+    app.add_middleware(SecurityMiddleware, config=security_config)
 
     logger.info("Validating OpenRouter service configuration...")
     if not settings.openrouter_api_key:
@@ -98,17 +110,6 @@ app.add_middleware(
 )
 
 # Initialize Redis for fastapi-guard
-redis_client: Redis = cache_service.redis_client
-rate_limit_store = RedisStore(redis_client)
-
-# FastAPI Guard Middleware for Global Rate Limiting
-security_config = SecurityConfig(
-    rate_limit_store=rate_limit_store,
-    global_rate_limit=(settings.rate_limit_global_requests, settings.rate_limit_global_window),
-    concurrent_requests_limit=settings.rate_limit_concurrent_users,
-)
-
-app.add_middleware(SecurityMiddleware, config=security_config)
 
 # Security Headers (consider using a reverse proxy for production)
 # if settings.security_headers:

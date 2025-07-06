@@ -1,4 +1,4 @@
-import json
+import orjson
 import redis.asyncio as redis
 from typing import Any, Optional, Callable, TypeVar
 from functools import wraps
@@ -36,12 +36,12 @@ class CacheService:
         self._check_connection()
         value = await self.redis_client.get(key)
         if value:
-            return json.loads(value)
+            return orjson.loads(value)
         return None
 
     async def set(self, key: str, value: Any, ex: Optional[int] = None):
         self._check_connection()
-        await self.redis_client.set(key, json.dumps(value), ex=ex)
+        await self.redis_client.set(key, orjson.dumps(value), ex=ex)
 
     async def delete(self, key: str):
         self._check_connection()
@@ -65,9 +65,9 @@ class CacheService:
 
     async def get_set(self, key: str, value: Any) -> Optional[Any]:
         self._check_connection()
-        old_value = await self.redis_client.getset(key, json.dumps(value))
+        old_value = await self.redis_client.getset(key, orjson.dumps(value))
         if old_value:
-            return json.loads(old_value)
+            return orjson.loads(old_value)
         return None
 
 # Cache decorators
@@ -75,7 +75,7 @@ def cached(key_prefix: str, ex: int = 300):
     def decorator(func: Callable[..., R]) -> Callable[..., R]:
         @wraps(func)
         async def wrapper(*args, **kwargs) -> R:
-            cache_key = f"{key_prefix}:{func.__name__}:{json.dumps(args)}:{json.dumps(kwargs)}"
+            cache_key = f"{key_prefix}:{func.__name__}:{orjson.dumps(args)}:{orjson.dumps(kwargs)}"
             cached_result = await cache_service.get(cache_key)
             if cached_result:
                 return cached_result

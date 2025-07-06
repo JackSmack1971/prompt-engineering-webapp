@@ -90,8 +90,9 @@ class Settings(BaseSettings):
         return v
     
     @validator('secret_key')
-    def validate_secret_key(cls, v: SecretStr): # Type hint for SecretStr
-        if len(v.get_secret_value()) < 32: # Access the secret value
+    def validate_secret_key(cls, v: SecretStr):
+        secret_value = v.get_secret_value()
+        if len(secret_value) < 32:
             raise ValueError('Secret key must be at least 32 characters for adequate entropy.')
         return v
     

@@ -10,6 +10,7 @@ from app.exceptions.custom_exceptions import AuthError # New import
 from app.core.config import settings
 from app.core.database import get_db_session # New import
 from app.services.auth import authenticate_user, create_access_token, create_refresh_token, decode_token
+from app.services.openrouter import openrouter_service
 from app.models.database import User
 
 router = APIRouter()
@@ -17,17 +18,28 @@ router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
 
 # Dependency to get current user
-async def get_current_user(token: str = Depends(oauth2_scheme)) -> User:
+from sqlalchemy import select # Add this import
+
+# Dependency to get current user
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db_session: AsyncSession = Depends(get_db_session)
+) -> User:
     try:
         payload = decode_token(token)
         username: str = payload.get("sub")
         if username is None:
             raise AuthError(message="Invalid authentication credentials")
-        # In a real app, you'd fetch the user from the DB based on username
-        # For now, we'll use a placeholder User object
-        user = User(username=username, email="test@example.com", password_hash="hashed_password")
+        
+        # Properly fetch user from database
+        result = await db_session.execute(select(User).filter(User.username == username))
+        user = result.scalars().first()
+        
+        if not user:
+            raise AuthError(message="User not found")
+            
         return user
-    except ValueError as e:
+    except Exception as e:
         raise AuthError(message="Could not validate credentials", details=str(e))
 
 # Authentication endpoints
@@ -43,8 +55,6 @@ class LoginRequest(BaseModel):
 @router.post("/token", response_model=Token)
 async def login_for_access_token(form_data: LoginRequest, db_session: AsyncSession = Depends(get_db_session)):
     user = await authenticate_user(form_data.username, form_data.password, db_session)
-    if not user:
-        raise AuthError(message="Incorrect username or password", details={"WWW-Authenticate": "Bearer"})
     access_token = create_access_token(data={"sub": user.username})
     refresh_token = create_refresh_token(data={"sub": user.username})
     return {"access_token": access_token, "token_type": "bearer", "refresh_token": refresh_token}

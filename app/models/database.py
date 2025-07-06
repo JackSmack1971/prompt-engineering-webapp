@@ -2,7 +2,7 @@ from typing import List, Optional
 from datetime import datetime
 import uuid
 
-from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON
+from sqlalchemy import Boolean, Column, DateTime, Integer, String, Text, ForeignKey, JSON, Float
 from sqlalchemy.dialects.postgresql import UUID, ARRAY
 from sqlalchemy.orm import relationship, Mapped, mapped_column, DeclarativeBase
 
@@ -69,7 +69,7 @@ class Prompt(Base):
     
     usage_count: Mapped[int] = mapped_column(Integer, default=0)
     favorite_count: Mapped[int] = mapped_column(Integer, default=0)
-    average_rating: Mapped[Optional[float]] = mapped_column(String(5))
+    average_rating: Mapped[Optional[float]] = mapped_column(Float)
     
     is_public: Mapped[bool] = mapped_column(Boolean, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
@@ -92,23 +92,23 @@ class TestResult(Base):
     prompt_id: Mapped[int] = mapped_column(Integer, ForeignKey("prompts.id"), nullable=False)
     
     model_name: Mapped[str] = mapped_column(String(100), nullable=False)
-    temperature: Mapped[Optional[float]] = mapped_column(String(5))
+    temperature: Mapped[Optional[float]] = mapped_column(Float)
     max_tokens: Mapped[Optional[int]] = mapped_column(Integer)
-    top_p: Mapped[Optional[float]] = mapped_column(String(5))
-    frequency_penalty: Mapped[Optional[float]] = mapped_column(String(5))
-    presence_penalty: Mapped[Optional[float]] = mapped_column(String(5))
+    top_p: Mapped[Optional[float]] = mapped_column(Float)
+    frequency_penalty: Mapped[Optional[float]] = mapped_column(Float)
+    presence_penalty: Mapped[Optional[float]] = mapped_column(Float)
     
     input_tokens: Mapped[int] = mapped_column(Integer, default=0)
     output_tokens: Mapped[int] = mapped_column(Integer, default=0)
     total_tokens: Mapped[int] = mapped_column(Integer, default=0)
     
     latency_ms: Mapped[Optional[int]] = mapped_column(Integer)
-    cost_usd: Mapped[Optional[float]] = mapped_column(String(10))
+    cost_usd: Mapped[Optional[float]] = mapped_column(Float)
     
     test_input: Mapped[str] = mapped_column(Text, nullable=False)
     test_output: Mapped[str] = mapped_column(Text, nullable=False)
     
-    evaluation_score: Mapped[Optional[float]] = mapped_column(String(5))
+    evaluation_score: Mapped[Optional[float]] = mapped_column(Float)
     evaluation_feedback: Mapped[Optional[str]] = mapped_column(Text)
     
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=datetime.utcnow)
@@ -233,7 +233,7 @@ class Payment(Base):
     uuid: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), default=uuid.uuid4, unique=True, nullable=False)
     user_id: Mapped[int] = mapped_column(Integer, ForeignKey("users.id"), nullable=False)
     
-    amount: Mapped[float] = mapped_column(String(10), nullable=False)
+    amount: Mapped[float] = mapped_column(Float, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), default="USD", nullable=False)
     payment_method: Mapped[str] = mapped_column(String(50))
     transaction_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False)

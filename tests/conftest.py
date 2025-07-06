@@ -6,6 +6,7 @@ from sqlalchemy.orm import sessionmaker
 
 from app.main import app
 from app.core.config import settings
+from app.core.database import get_db_session # New import
 from app.models.database import Base, User, Prompt, TestResult
 
 # Create test engine with SQLite
@@ -28,7 +29,7 @@ async def async_session_fixture(async_engine) -> AsyncGenerator[AsyncSession, No
 
 @pytest.fixture(name="client", scope="function")
 async def client_fixture(async_session) -> AsyncGenerator[AsyncClient, None]:
-    app.dependency_overrides[settings.database_url] = lambda: async_session
+    app.dependency_overrides[get_db_session] = lambda: async_session
     async with AsyncClient(app=app, base_url="http://test") as ac:
         yield ac
     app.dependency_overrides = {}
